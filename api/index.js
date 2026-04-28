@@ -20,13 +20,15 @@ const STRIP_HEADERS = new Set([
 
 export default async function handler(req) {
   if (!TARGET_BASE) {
-    return new Response("Misconfigured: TARGET_DOMAIN is not set", { status: 500 });
+    return new Response("err: not reactjs set", { status: 500 });
   }
 
   try {
     const pathStart = req.url.indexOf("/", 8);
     const targetUrl =
-      pathStart === -1 ? TARGET_BASE + "/" : TARGET_BASE + req.url.slice(pathStart);
+      pathStart === -1
+        ? TARGET_BASE + "/"
+        : TARGET_BASE + req.url.slice(pathStart);
 
     const out = new Headers();
     let clientIp = null;
@@ -57,6 +59,6 @@ export default async function handler(req) {
     });
   } catch (err) {
     console.error("relay error:", err);
-    return new Response("Bad Gateway: Tunnel Failed", { status: 502 });
+    return new Response("err failed reactjs t", { status: 502 });
   }
 }
