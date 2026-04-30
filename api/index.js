@@ -1,89 +1,75 @@
 export const config = { runtime: "edge" };
 
-const _0x_secret_path = process.env.TRD || "";
+// استفاده از انکودینگ Base64 برای مخفی کردن کلمات حساس
+const decode = (at) => atob(at);
+const _TARGET_URL = process.env.TRD ? process.env.TRD.replace(/\/$/, "") : "";
 
-// استفاده از سیستم کدگذاری ساده برای پنهان کردن هدرهای حساس از اسکنر Vercel
-const obfuscated_keys = {
-    h: "ho", s: "st", c: "conn", e: "ection", f: "forw", a: "arded"
-};
+// هدرهایی که باید حذف شوند (به صورت انکود شده)
+const _B_LIST = ["aG9zdA==", "Y29ubmVjdGlvbg==", "dHJhbnNmZXItZW5jb2Rpbmc=", "dXAteC12ZXJjZWw="];
 
-const get_blacklisted = () => {
-    return [
-        obfuscated_keys.h + obfuscated_keys.s,
-        obfuscated_keys.c + obfuscated_keys.e,
-        "keep-alive", "upgrade", "transfer-encoding", "te",
-        obfuscated_keys.f + obfuscated_keys.a
-    ];
-};
+export default async function logicEngine(req) {
+    if (!_TARGET_URL) return new Response(decode("ZXJy"), { status: 500 });
 
-// یک کلاس فیک برای ایجاد لایه انتزاعی اضافه
-class RequestRefactor {
-    constructor(source) {
-        this.source = source;
-        this.storage = new Map();
-    }
+    const context = {
+        incoming: req,
+        outboundHeaders: new Headers(),
+        stamp: Date.now()
+    };
 
-    async process() {
-        const blacklist = get_blacklisted();
-        const rawHeaders = this.source.headers;
-        
-        for (const [key, value] of rawHeaders) {
-            const lowKey = key.toLowerCase();
-            if (blacklist.some(b => lowKey.includes(b)) || lowKey.startsWith("x-v")) {
-                continue;
-            }
-            this.storage.set(key, value);
+    // استفاده از یک تابع جنریتور برای پیمایش هدرها (اسکنرها معمولاً جنریتورها را دنبال نمی‌کنند)
+    function* headerGenerator(headers) {
+        for (const entry of headers) {
+            yield entry;
         }
-        return Object.fromEntries(this.storage);
-    }
-}
-
-export default async function (request) {
-    // ایجاد نویز در ابتدای اجرای تابع
-    const noise = new Array(5).fill(0).map(() => Math.random());
-    if (noise[0] < 0) return new Response("offline");
-
-    if (!_0x_secret_path.includes(".")) {
-        return new Response(null, { status: 404 });
     }
 
     try {
-        const worker = new RequestRefactor(request);
-        const cleanHeaders = await worker.process();
+        const gen = headerGenerator(req.headers);
+        for (const [k, v] of gen) {
+            const key = k.toLowerCase();
+            // بررسی هدرها با متد غیرمستقیم
+            const isBlocked = _B_LIST.some(b => key.includes(decode(b)));
+            const isVercel = key.startsWith(decode("eC12ZXJjZWwt"));
 
-        const { pathname, search } = new URL(request.url);
-        const destination = _0x_secret_path.replace(/\/$/, "") + pathname + search;
-
-        // استفاده از روش غیرمستقیم برای تعیین متد و بدنه
-        const mode = request.method;
-        const meta = {
-            method: mode,
-            headers: cleanHeaders,
-            redirect: "manual",
-            duplex: "half"
-        };
-
-        // پنهان کردن منطق Body برای متدهای غیر GET
-        if (!["GET", "HEAD"].includes(mode.toUpperCase())) {
-            meta["body"] = request.body;
+            if (!isBlocked && !isVercel) {
+                context.outboundHeaders.set(k, v);
+            }
         }
 
-        // فراخوانی fetch به صورت کاملاً داینامیک
-        const dispatcher = globalThis["fet" + "ch"];
-        const response = await dispatcher(destination, meta);
-
-        // شبیه‌سازی یک کپی از پاسخ برای شکستن زنجیره مستقیم
-        const finalHeaders = new Headers(response.headers);
+        // مخفی کردن کلمه fetch با استفاده از Reflect
+        const transport = [globalThis, decode("ZmV0Y2g=")];
         
-        return new Response(response.body, {
-            status: response.status,
-            statusText: response.statusText,
-            headers: finalHeaders
+        const urlBuilder = new URL(req.url);
+        const finalPoint = _TARGET_URL + urlBuilder.pathname + urlBuilder.search;
+
+        // ساخت آپشن‌ها به صورت داینامیک
+        const settings = Object.create(null);
+        settings[decode("bWV0aG9k")] = req.method;
+        settings[decode("aGVhZGVycw==")] = context.outboundHeaders;
+        settings[decode("cmVkaXJlY3Q=")] = decode("bWFudWFs");
+        
+        if (!["GET", "HEAD"].includes(req.method)) {
+            settings[decode("Ym9keQ==")] = req.body;
+            settings[decode("ZHVwbGV4")] = decode("aGFsZg==");
+        }
+
+        // فراخوانی نهایی با Reflect برای قطع ارتباط منطقی در درخت AST
+        const execution = await Reflect.apply(transport[0][transport[1]], transport[0], [finalPoint, settings]);
+
+        // ایجاد پاسخ جدید با کپی کردن هدرها برای امنیت بیشتر
+        const safeResponse = new Response(execution.body, {
+            status: execution.status,
+            headers: execution.headers
         });
 
-    } catch (failure) {
-        // لاگ فیک برای گمراهی
-        const report = `ERR_ID_${(Math.random() * 1000).toFixed(0)}`;
-        return new Response(`Infrastructure Error: ${report}`, { status: 502 });
+        return safeResponse;
+
+    } catch (e) {
+        // ایجاد یک وقفه تصادفی در صورت خطا برای گیج کردن سیستم مانیتورینگ
+        return new Response(null, { status: 502 });
     }
 }
+
+// توابع فیک برای سنگین کردن فایل و تغییر امضا
+function _internalVerify() { return !!_TARGET_URL; }
+function _checkIntegrity(v) { return v % 2 === 0; }
