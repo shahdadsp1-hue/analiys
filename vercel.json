@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "name": "vercel-xhttp-relay",
+  "name": "auth-check",
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index" }
+    { "source": "/(.*)", "destination": "/api/auth-check.js" }
   ],
   "trailingSlash": false
 }
