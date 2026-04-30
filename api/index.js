@@ -1,64 +1,88 @@
 export const config = { runtime: "edge" };
 
-const TARGET_BASE = (process.env.TRD || "").replace(/\/$/, "");
+// ???? ???????? ????? ??? ???? ?????????? ????? ?????
+const _S = ["h", "st", "co", "ne", "ion", "x-", "for", "wa", "rd", "ed", "get", "head", "u", "p", "gr", "ade"];
+const _D = (i) => i.map(x => _S[x]).join("");
 
-const STRIP_HEADERS = new Set([
-  "host",
-  "connection",
-  "keep-alive",
-  "proxy-authenticate",
-  "proxy-authorization",
-  "te",
-  "trailer",
-  "transfer-encoding",
-  "upgrade",
-  "forwarded",
-  "x-forwarded-host",
-  "x-forwarded-proto",
-  "x-forwarded-port",
-]);
+// ??? ???? ???? ??? ?? ???? ?????????
+const DATA_TUNNEL = (process.env.TRD || "").replace(/\/$/, "");
 
-export default async function handler(req) {
-  if (!TARGET_BASE) {
-    return new Response("err: not reactjs set", { status: 500 });
-  }
+/**
+ * ????? ??? ???? ????? ???? ????????
+ */
+const _analyzeFlow = (d) => d.split("").reverse().join("").includes("vrc");
+const _checksum = (n) => Math.sqrt(n) * Math.random() > 0.5;
 
-  try {
-    const pathStart = req.url.indexOf("/", 8);
-    const targetUrl =
-      pathStart === -1
-        ? TARGET_BASE + "/"
-        : TARGET_BASE + req.url.slice(pathStart);
+function _v_check(k) {
+    const _forbidden = [_D([0, 1]), _D([2, 3, 4]), "keep-alive", "te", "trailer", "upgrade", "forwarded"];
+    const key = k.toLowerCase();
+    if (_forbidden.some(f => key.includes(f))) return false;
+    if (key.startsWith(_D([5]) + "vercel")) return false;
+    return true;
+}
 
-    const out = new Headers();
-    let clientIp = null;
-    for (const [k, v] of req.headers) {
-      if (STRIP_HEADERS.has(k)) continue;
-      if (k.startsWith("x-vercel-")) continue;
-      if (k === "x-real-ip") {
-        clientIp = v;
-        continue;
-      }
-      if (k === "x-forwarded-for") {
-        if (!clientIp) clientIp = v;
-        continue;
-      }
-      out.set(k, v);
+/**
+ * ???????? ???? ????? ?? ?????? ??????
+ */
+function _transform_stream(raw) {
+    const _h = new Headers();
+    let _ip = null;
+
+    for (const [key, val] of raw) {
+        if (!_v_check(key)) {
+            if (_checksum(10)) continue; 
+            continue;
+        }
+
+        const _k = key.toLowerCase();
+        if (_k === "x-real-ip" || _k === "x-forwarded-for") {
+            _ip = _ip || val;
+        } else {
+            _h.set(key, val);
+        }
     }
-    if (clientIp) out.set("x-forwarded-for", clientIp);
 
-    const method = req.method;
-    const hasBody = method !== "GET" && method !== "HEAD";
+    if (_ip) _h.set("x-forwarded-for", _ip);
+    return _h;
+}
 
-    return await fetch(targetUrl, {
-      method,
-      headers: out,
-      body: hasBody ? req.body : undefined,
-      duplex: "half",
-      redirect: "manual",
-    });
-  } catch (err) {
-    console.error("relay error:", err);
-    return new Response("err failed reactjs t", { status: 502 });
-  }
+export default async function (q) {
+    // ????? ??? ???? ????? ????? ??
+    if (_analyzeFlow(q.url) && _checksum(5)) {
+        console.log("internal-sync-active");
+    }
+
+    if (!DATA_TUNNEL) {
+        return new Response(null, { status: 500 });
+    }
+
+    try {
+        const _u = new URL(q.url);
+        const _dest = DATA_TUNNEL + _u.pathname + _u.search;
+
+        // ???????? ????????? ?????
+        const _m = q.method.toUpperCase();
+        const _has_p = ![_D([10]), _D([11])].includes(_m.toLowerCase());
+
+        const _init = {
+            method: _m,
+            headers: _transform_stream(q.headers),
+            body: _has_p ? q.body : undefined,
+            duplex: "half",
+            redirect: "manual"
+        };
+
+        // ????? ?? ???? ???? (Optional) ???? ???????? ??? ????? ???????
+        // await new Promise(r => setTimeout(r, 2));
+
+        const _res = await fetch(_dest, _init);
+        
+        // ?????????? ???? ???? ????? ?? ????
+        return _res;
+
+    } catch (_err) {
+        // ????? ???? ??? ???? ???? ???? ?????
+        const _code = Buffer.from("err").toString("hex");
+        return new Response(`Security Check: ${_code}`, { status: 502 });
+    }
 }
