@@ -1,7 +1,7 @@
 {
-  "name": "auth-check",
+  "name": "file-check",
   "version": "1.0.0",
-  "description": "Edge-runtime auth-check",
+  "description": "Edge-runtime file-check",
   "private": true,
   "license": "MIT"
 }

@@ -1,8 +1,6 @@
 {
   "version": 2,
-  "name": "auth-check",
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/api/auth-check.js" }
-  ],
+  "name": "file-check",
+  "rewrites": [{ "source": "/(.*)", "destination": "/api/check-api.js" }],
   "trailingSlash": false
 }
