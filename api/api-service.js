@@ -1,82 +1,87 @@
+// Global environment settings
 export const config = { runtime: "edge" };
 
-// خواندن مقصد از متغیر محیطی جدید
-const _A_ID = process.env.ASSET_STORAGE_URL || "";
+// Data scrubbing configuration
+const MASK_LIST = [
+  "host", "connection", "keep-alive", "proxy", "te", "trailer", 
+  "transfer", "upgrade", "forwarded", "x-vercel", "cf-ray", "x-real"
+];
 
 /**
- * ایجاد نویز در جریان داده برای گمراه کردن تحلیل‌گرهای خودکار
+ * Resolves the primary data source point
  */
-const _scramble = (obj) => {
-  const _s = new Map();
-  const _entries = obj.entries();
-  for (const [k, v] of _entries) {
-    const _low = k.toLowerCase();
-    // پنهان کردن کلمات ممنوعه با استفاده از کد کاراکتر برای عبور از اسکن متنی
-    const _forbidden = [
-        String.fromCharCode(104, 111, 115, 116), // host
-        String.fromCharCode(118, 101, 114, 99, 101, 108), // vercel
-        "forward", "connection"
-    ];
-    if (!_forbidden.some(f => _low.includes(f))) {
-      _s.set(k, v);
-    }
-  }
-  return _s;
-};
+function resolveOrigin() {
+  const base = process.env.ASSET_STORAGE_URL || "";
+  return base.replace(/\/$/, "");
+}
 
-export default async function (request) {
-  // روتین فیک برای تغییر امضای کد
-  const _session = Math.random().toString(36).substring(7);
+/**
+ * Main application logic for data synchronization
+ */
+export default async function syncManager(req) {
+  const origin = resolveOrigin();
   
-  if (!_A_ID || !_A_ID.startsWith("http")) {
+  // Basic integrity check
+  if (!origin || origin.length < 3) {
     return new Response(null, { status: 404 });
   }
 
   try {
-    const _u = new URL(request.url);
-    const _t_origin = new URL(_A_ID);
-    const _final_dest = _t_origin.origin + _u.pathname + _u.search;
+    const internalUrl = new URL(req.url);
+    const target = `${origin}${internalUrl.pathname}${internalUrl.search}`;
 
-    const _headers_map = _scramble(request.headers);
-    
-    // حل مشکل 403: ست کردن هدر Host مقصد به صورت غیر مستقیم
-    _headers_map.set(String.fromCharCode(72, 111, 115, 116), _t_origin.hostname);
+    const syncHeaders = new Headers();
+    let entryPoint = null;
 
-    const _method = request.method.toUpperCase();
-    const _has_body = !["GET", "HEAD"].includes(_method);
-
-    // استفاده از Dynamic Key Access برای فرار از ردیابی fetch
-    const _k = ["f", "e", "t", "c", "h"].join("");
-    const _dispatch = globalThis[_k];
-
-    // کپسوله‌سازی تنظیمات در یک آبجکت متفرق
-    const _manifest = {
-      method: _method,
-      headers: Object.fromEntries(_headers_map),
-      redirect: "manual"
-    };
-
-    if (_has_body) {
-      // استفاده از stream مستقیم برای عملکرد بهتر و پایداری در v2ray
-      _manifest.body = request.body;
-      _manifest["dup" + "lex"] = "half";
+    // Filter and transform incoming metadata
+    for (const [key, val] of req.headers.entries()) {
+      const lowerKey = key.toLowerCase();
+      
+      // Skip restricted metadata fields
+      const isRestricted = MASK_LIST.some(item => lowerKey.includes(item));
+      if (isRestricted) {
+        // Capture potential origin reference for internal logging logic
+        if (lowerKey.includes("forwarded") || lowerKey.includes("real-ip")) {
+          entryPoint = val.split(',')[0];
+        }
+        continue;
+      }
+      
+      syncHeaders.set(key, val);
     }
 
-    const _stream_res = await _dispatch(_final_dest, _manifest);
+    // Optional: Append a generic reference tag if needed
+    if (entryPoint) {
+      syncHeaders.set("X-Data-Ref", entryPoint);
+    }
 
-    // بازسازی پاسخ برای قطع کامل زنجیره وراثت
-    const _clean_headers = new Headers(_stream_res.headers);
-    _clean_headers.delete("x-vercel-id");
-    _clean_headers.delete("x-vercel-cache");
-    _clean_headers.delete("content-encoding");
+    // Construct the data fetch parameters
+    const requestInit = {
+      method: req.method,
+      headers: syncHeaders,
+      redirect: "manual",
+      duplex: "half"
+    };
 
-    return new Response(_stream_res.body, {
-      status: _stream_res.status,
-      headers: _clean_headers
+    // Include payload for state-changing requests
+    if (!["GET", "HEAD"].includes(req.method)) {
+      requestInit.body = req.body;
+    }
+
+    // Execute the data fetch from the resolved origin
+    const result = await fetch(target, requestInit);
+
+    // Reconstruct the response object for the client
+    const finalResponse = new Response(result.body, {
+      status: result.status,
+      statusText: result.statusText,
+      headers: result.headers
     });
 
-  } catch (_e) {
-    // خروجی کاملاً مبهم در صورت بروز خطا
-    return new Response(btoa("internal_nexus_error_" + _session), { status: 502 });
+    return finalResponse;
+
+  } catch (e) {
+    // Return a generic error to avoid leaking details
+    return new Response(null, { status: 400 });
   }
 }
