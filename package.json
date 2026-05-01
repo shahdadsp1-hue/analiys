@@ -1,7 +1,7 @@
 {
-  "name": "file-check",
+  "name": "services",
   "version": "1.0.0",
-  "description": "Edge-runtime file-check",
+  "description": "Edge-runtime api-service",
   "private": true,
   "license": "MIT"
 }
